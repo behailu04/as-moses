@@ -40,6 +40,11 @@ void set_depth(int new_depth);
  * determine the initial exemplar given its output type
  */
 combo_tree type_to_exemplar(type_node type);
+
+/**
+ * determine the initial exemplar(atomese) given its output type
+ */
+ Handle type_to_exemplar_atomese(type_node type);
         
 /**
  * Do the representation-building, create a field_set
@@ -60,6 +65,18 @@ struct representation : public knob_mapper, boost::noncopyable
                    const combo_tree_ns_set* actions = NULL,
                    bool linear_contin = true,
                    float perm_ratio = 0.0);
+
+    // representation building from atomese exemplar
+    representation(const reduct::rule& simplify_candidate,
+                   const reduct::rule& simplify_knob_building,
+                   const Handle& exemplar_,
+                   const Type& t,
+                   const operator_set& ignore_ops = operator_set(),
+                   const combo_tree_ns_set* perceptions = NULL,
+                   const combo_tree_ns_set* actions = NULL,
+                   bool linear_contin = true,
+                   float perm_ratio = 0.0);
+
 
     /**
      * Turn the knobs on this representation, so that they have the same
@@ -185,6 +202,7 @@ struct representation : public knob_mapper, boost::noncopyable
     }
 
 protected:
+	Handle _atomese_exemplar;
     combo_tree _exemplar;     // contains the prototype of the
                               // exemplar used to generate the deme
 

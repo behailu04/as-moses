@@ -180,32 +180,42 @@ void table_problem_base::common_type_setup(problem_params& pms,
                                            type_node out_type)
 {
     // Infer the signature based on the input table.
-    table_type_signature = table.get_signature();
-    logger().info() << "Table signature " << table_type_signature;
+	table_type_signature = table.get_signature();
+	logger().info() << "Table signature " << table_type_signature;
 
-    // Infer the type of the input table
-    if (id::unknown_type == out_type) {
-        type_tree table_output_tt = get_signature_output(table_type_signature);
-        out_type = get_type_node(table_output_tt);
-    }
+	// Infer the type of the input table
+	if (id::unknown_type == out_type) {
+		type_tree table_output_tt = get_signature_output(table_type_signature);
+		out_type = get_type_node(table_output_tt);
+	}
 
-    // Determine the default exemplar to start with
-    if (pms.exemplars.empty()) {
-        pms.exemplars.push_back(type_to_exemplar(out_type));
-    }
+	if (pms.deme_params.atomspace_port) {
+		if (pms.exemplars.empty()) {
+            pms.atomese_exemplars = { type_to_exemplar(out_type)};
+        }
 
-    // The exemplar output type can differ from the table output type
-    // for scorers that are trying to select rows (the pre and select scorers)
-    output_type =
-        get_type_node(get_output_type_tree(*pms.exemplars.begin()->begin()));
+        output_type
+	}
+	else {
+		
+		// Determine the default exemplar to start with
+		if (pms.exemplars.empty()) {
+			pms.exemplars.push_back(type_to_exemplar(out_type));
+		}
 
-    if (id::unknown_type == output_type) output_type = out_type;
+		// The exemplar output type can differ from the table output type
+		// for scorers that are trying to select rows (the pre and select scorers)
+		output_type =
+				get_type_node(get_output_type_tree(*pms.exemplars.begin()->begin()));
 
-    cand_type_signature = gen_signature(
-        get_signature_inputs(table_type_signature),
-        type_tree(output_type));
+		if (id::unknown_type == output_type) output_type = out_type;
 
-    logger().info() << "Inferred output type: " << output_type;
+		cand_type_signature = gen_signature(
+				get_signature_inputs(table_type_signature),
+				type_tree(output_type));
+
+		logger().info() << "Inferred output type: " << output_type;
+	}
 }
 
 // ==================================================================

@@ -106,6 +106,8 @@ struct problem_params : public option_base
     std::vector<std::string> exemplars_str;
     std::vector<combo_tree> exemplars;
 
+    HandleSeq atomese_exemplars;
+
     // metapop_param
     int max_candidates_per_deme;
     int revisit;

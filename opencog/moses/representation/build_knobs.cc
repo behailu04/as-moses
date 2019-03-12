@@ -37,6 +37,9 @@
 #include <opencog/reduct/rules/meta_rules.h>
 #include <opencog/reduct/rules/general_rules.h>
 
+#include <opencog/atoms/base/Handle.h>
+#include <opencog/atoms/base/Link.h>
+
 #include "build_knobs.h"
 
 using namespace std;
@@ -130,6 +133,150 @@ build_knobs::build_knobs(combo_tree& exemplar,
                   ss.str().c_str());
     }
 }
+
+build_atomese_knobs::build_atomese_knobs(opencog::Handle &exemplar,
+                                         const opencog::Type &tt,
+                                         opencog::moses::representation &rep,
+                                         const opencog::combo::operator_set &ignore_ops,
+                                         const opencog::combo::combo_tree_ns_set *perceptions,
+                                         const opencog::combo::combo_tree_ns_set *actions,
+                                         bool linear_regression,
+                                         opencog::moses::contin_t step_size,
+                                         opencog::moses::contin_t expansion,
+                                         opencog::moses::field_set::width_t depth,
+                                         float perm_ratio)
+        : _exemplar(exemplar), _rep(rep), _skip_disc_probe(true),
+          _arity(exemplar->get_arity()), _signature(exemplar->get_type()),
+          _linear_contin(linear_regression),
+          _step_size(step_size), _expansion(expansion), _depth(depth),
+          _perm_ratio(perm_ratio),
+          _ignore_ops(ignore_ops), _perceptions(perceptions), _actions(actions)
+{
+	type_node output_type = gen_output_type(_signature);
+	if(perceptions != NULL || actions != NULL) {
+		std::stringstream ss;
+		ss << output_type;
+		OC_ASSERT(0, "ERROR: During representation building expected action type");
+	}
+
+	if (output_type == id::boolean_type) {
+		logical_canonize(_exemplar);
+		build_logical(_exemplar);
+
+	}
+	else if (output_type == id::contin_type) {
+        std:: stringstream ss;
+		ss << output_type;
+		OC_ASSERT(0, "NOT Implemented yet.");
+	}
+	else {
+		std:: stringstream ss;
+		ss << output_type;
+		OC_ASSERT(0, "NOT Implemented yet.");
+	}
+
+}
+
+void build_atomese_knobs::logical_canonize(opencog::Handle &exemplar)
+{
+	Type t = exemplar->get_type();
+
+	if (t == AND_LINK) {
+		HandleSeq exemplar_seq = {exemplar};
+		_exemplar = createLink(exemplar_seq, OR_LINK);
+	}
+	else if (t == OR_LINK) {
+		HandleSeq exemplar_seq = {exemplar};
+		_exemplar = createLink(exemplar_seq, AND_LINK);
+	}
+	else if (t == TRUE_LINK || t == FALSE_LINK ||
+			 t == NOT_LINK || t == PREDICATE_NODE) {
+		HandleSeq exemplar_seq = {exemplar};
+		Handle logical_and = createLink(exemplar_seq, AND_LINK);
+		HandleSeq exemplar_seq1 = {logical_and};
+		_exemplar = createLink(exemplar_seq1, OR_LINK);
+	}
+
+}
+
+void build_atomese_knobs::build_logical(opencog::Handle &exemplar)
+{
+	Type flip = NOTYPE;
+
+	Type tt = exemplar->get_type();
+
+	if (tt == AND_LINK) {
+		flip = OR_LINK;
+	}
+	else if ( tt == OR_LINK) {
+		flip = AND_LINK;
+	}
+
+	if( flip == NOTYPE) {
+		return;
+	}
+
+	logger().debug("First call to add_logical_knobs");
+	// add logical knobs
+	add_logical_knobs(exemplar);
+	
+    // Loop over each child and add logical knobs
+
+
+
+
+
+}
+
+void build_atomese_knobs::add_logical_knobs(Handle& exemplar)
+{
+	HandleSeq perms;
+
+}
+void build_atomese_knobs::sample_logical_perms(HandleIterator it, HandleSeq& perms)
+{
+	for (int i : boost::irange(1, _arity + 1))
+	{
+		// add sub logical graphs.
+
+	}
+}
+
+template<typename It>
+boost::ptr_vector<logical_subgraph_knob> logical_probe_rec(
+				HandleIterator subIt,
+				Handle& exemplar,
+				HandleIterator it,
+				It from, It to,
+				bool add_if_in_exemplar,
+				unsigned n_jobs = 1) const
+{
+	if (n_jobs > 1) {
+
+	}
+	else {
+
+
+	}
+}
+
+void logical_subtree_knob(Handle& handle, HandleIterator handleIterator,
+		                  const logical_subtree_knob& lsk) {}
+
+type_node build_atomese_knobs::gen_output_type(const Type& tt) {
+    if (tt == AND_LINK || tt == OR_LINK
+        || tt == TRUE_LINK || FALSE_LINK
+        || tt == NOT_LINK) {
+        return id::boolean_type;
+    }
+    else if (tt == PLUS_LINK || tt == TIMES_LINK) {
+        return id::contin_type
+    }
+    else {
+        OC_ASSERT(0, "ERROR: Not implemented yet");
+    }
+}
+
 
 /**
  * permitted_op -- return true if the vertex is a permitted operator.

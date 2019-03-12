@@ -46,6 +46,7 @@ namespace opencog { namespace moses {
 struct knob_mapper
 {
     typedef combo_tree::iterator pre_it;
+    typedef HandleIterator handle_it;
     
     // Important: knobs are kept sorted in an order consistant with
     // that of the field_set _fields that is constructed according to

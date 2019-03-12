@@ -33,6 +33,9 @@
 #include <opencog/combo/combo/action.h>
 #include <opencog/combo/combo/perception.h>
 
+#include <opencog/atoms/base/Handle.h>
+#include <opencog/atoms/base/Link.h>
+
 #include "field_set.h"
 #include "representation.h"
 
@@ -196,6 +199,85 @@ protected:
     typedef boost::unique_lock<shared_mutex> unique_lock;
 
     mutable shared_mutex lp_mutex; // used in logical_probe_thread_safe
+
+};
+
+// build knobs on a reduced atomese program
+struct build_atomese_knobs : boost::noncopyable
+{
+	build_atomese_knobs(Handle& exemplar,
+				const Type& tt,
+				representation& rep,
+				const operator_set& ignore_ops = operator_set(),
+				const combo_tree_ns_set* perceptions = NULL,
+				const combo_tree_ns_set* actions = NULL,
+				bool linear_regression = true,
+				contin_t step_size = 1.0,
+				contin_t expansion = 1.0,
+				field_set::width_t depth = 4,
+				float perm_ratio = 0.0);
+
+	type_node gen_output_type(const Type& tt);
+
+protected:
+	/*
+	 * Canonize the atomese program so that the top of the graph to be
+	 * AND_LINK or OR_LIND.
+	*/
+	void logical_canonize(Handle& exemplar);
+
+	void build_logical(Handle& exemplar);
+
+	void add_logical_knobs(Handle& exemplar);
+
+	void sample_logical_perms(HandleIterator it, HandleSeq& handle_seq);
+
+	template<typename It>
+	boost::ptr_vector<logical_subgraph_knob> logical_probe_rec(
+			combo_tree::iterator subtree,
+			combo_tree& exemplar,
+			combo_tree::iterator it,
+			It from, It to,
+			bool add_if_in_exemplar,
+			unsigned n_jobs = 1) const;
+
+	void logical_subtree_knob(Handle& handle, HandleIterator handleIterator,
+							  const logical_subgraph_knob& lsk);
+protected:
+	opencog::Handle& _exemplar;
+	representation& _rep;
+
+	// knob probing is expensive, skip if possible.
+	bool _skip_disc_probe;
+
+	// Number of arguments of the combo program.
+	const combo::arity_t _arity;
+
+	// Type signature of the argument literals.
+	const Type _signature;
+
+	// If true, then contin knob-building only generates linear
+	// expressions (i.e. so that moses performs only linear
+	// regression).  This greatly reduces the number of contin knobs
+	// that get created (and thus smaller and faster field sets) but
+	// it also makes fitting weaker.  However, some real-life problems
+	// want linear solutions.
+	bool _linear_contin;
+
+	contin_t _step_size, _expansion;
+	field_set::width_t _depth;
+
+	// perm_ratio ranges from 0 to 1 and defines the number of perms
+	// to consider, 0 means _arity positive literals and _arity pairs
+	// of literals, 1 means _arity positive literals and
+	// _arity*(_arity-1) pairs of literals
+	float _perm_ratio;
+
+	// The set of operators to ignore during representation building.
+	const operator_set& _ignore_ops;
+
+	const combo_tree_ns_set* _perceptions;
+	const combo_tree_ns_set* _actions;
 
 };
 

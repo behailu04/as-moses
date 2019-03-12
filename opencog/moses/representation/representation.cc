@@ -36,6 +36,9 @@
 #include <opencog/reduct/rules/logical_rules.h>
 #include <opencog/reduct/rules/general_rules.h>
 
+#include <opencog/atoms/base/Handle.h>
+#include <opencog/atoms/base/Link.h>
+
 #include "representation.h"
 #include "build_knobs.h"
 
@@ -101,6 +104,24 @@ combo_tree type_to_exemplar(type_node type)
     }
     }
     return combo_tree();
+}
+
+Handle type_to_exemplar_atomese(type_node type)
+{
+	switch(type) {
+		HandleSeq handle_seq;
+		case id::boolean_type: {
+			return createLink(handle_seq, AND_LINK);
+		}
+		case id::contin_type: {
+			return createLink(handle_seq, PLUS_LINK);
+		}
+		default: {
+			std::stringstream ss;
+			ss << "Error: type \"" << type << "\" not supported";
+			OC_ASSERT(false,ss.str());
+		}
+	}
 }
 
 representation::representation(const reduct::rule& simplify_candidate,
@@ -228,7 +249,25 @@ representation::representation(const reduct::rule& simplify_candidate,
     }
 #endif // EXEMPLAR_INST_IS_UNDEAD
 }
+representation::representation(const reduct::rule& simplify_candidate,
+		                       const reduct::rule& simplify_knob_building,
+		                       const Handle& exemplar_,
+		                       const Type& tt,
+		                       const operator_set& ignore_ops,
+		                       const combo_tree_ns_set* perceptions,
+		                       const combo_tree_ns_set* actions,
+		                       bool linear_contin,
+		                       float perm_ratio)
+	: _atomese_exemplar(exemplar_),
+	  _simplify_candidate(&simplify_candidate),
+	  _simplify_knob_building(&simplify_knob_building)
+{
+	// Build knobs
+	build_atomese_knobs(_atomese_exemplar, tt, *this, ignore_ops,
+						perceptions,actions, linear_contin,
+						stepsize, expansion, depth,perm_ratio);
 
+}
 /// Turn the knobs on the representation, so that the knob settings match
 /// the instance supplied as the argument.
 void representation::transform(const instance& inst)
