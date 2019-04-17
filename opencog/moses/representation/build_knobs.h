@@ -43,11 +43,12 @@ using namespace combo;
 // need to call a generator method... (dispatched based on type
 
 // build knobs on a reduced combo tree
-struct build_knobs : boost::noncopyable
+
+struct build_knobs_combo : boost::noncopyable
 {
     // used to be stepsize = 1.0, expansion = 2, depth = 4
     // Optional arguments used only for Petbrain and actions
-    build_knobs(combo_tree& exemplar,
+    build_knobs_combo(combo_tree& exemplar,
                 const type_tree& tt,
                 representation& rep,
                 const operator_set& ignore_ops = operator_set(),
