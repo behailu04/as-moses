@@ -176,7 +176,7 @@ representation::representation(const reduct::rule& simplify_candidate,
     }
 
     // Build the knobs.
-    build_knobs(_exemplar, tt, *this, ignore_ops,
+    build_knobs_combo(_exemplar, tt, *this, ignore_ops,
                 perceptions, actions, linear_contin,
                 stepsize, expansion, depth, perm_ratio);
 
