@@ -36,6 +36,7 @@
 #include <opencog/reduct/rules/logical_rules.h>
 #include <opencog/reduct/rules/general_rules.h>
 
+#include <opencog/atoms/base/Link.h>
 #include "representation.h"
 #include "build_knobs.h"
 
@@ -186,6 +187,39 @@ representation::representation(const reduct::rule& simplify_candidate,
     if (logger().is_fine_enabled()) {
         logger().fine() << "Rep, after knob building: " << _exemplar;
     }
+representation::representation(const reduct::rule& simplify_candidate,
+                               const reduct::rule& simplify_knob_building,
+                               const Handle& exemplar_,
+                               const Type& tt,
+                               const handle_operator_set& ignore_ops,
+                               const handle_ns_set& perceptions,
+                               const handle_ns_set& actions,
+                               bool linear_contin,
+                               float perm_ratio)
+    : _atomese_exemplar(exemplar_),
+      _simplify_candidate(&simplify_candidate),
+      _simplify_knob_building(&simplify_knob_building)
+{
+    logger().info() << "Start knob building, rep size="
+                    << _atomese_exemplar->get_arity()
+                    <<" complexity="
+                    << atomese_complexity(_atomese_exemplar);
+
+    // Build knobs form atomese exemplar
+	build_knobs_atomese(_atomese_exemplar, tt, *this, ignore_ops,
+	            perceptions, actions, linear_contin,
+	            stepsize, expansion, depth, perm_ratio);
+
+    if (logger().is_fine_enabled()) {
+        logger().fine() << "Rep, after knob building: " << _exemplar;
+    }
+
+    knob_to_field_set_converter();
+
+    // output stream the the newly decoreted atomese program
+
+    
+}
 #if 0
     // Attempt to adjust the contin spec step size to a value that is
     // "most likely to be useful" for exploring the neighborhood of an
