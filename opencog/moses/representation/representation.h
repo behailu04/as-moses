@@ -77,6 +77,9 @@ struct representation : public knob_mapper, boost::noncopyable
                    const handle_ns_set& actions,
                    bool linear_contin = true,
                    float perm_ratio = 0.0);
+
+    void knob_to_field_set_converter();
+
     /**
      * Turn the knobs on this representation, so that they have the same
      * settings as those in the 'instance' argument.

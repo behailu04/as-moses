@@ -187,6 +187,26 @@ representation::representation(const reduct::rule& simplify_candidate,
     if (logger().is_fine_enabled()) {
         logger().fine() << "Rep, after knob building: " << _exemplar;
     }
+
+    knob_to_field_set_converter();
+
+
+    if (logger().is_debug_enabled()) {
+        std::stringstream ss;
+        ostream_prototype(ss << "Created prototype: ");
+        logger().debug(ss.str());
+    }
+
+#ifdef EXEMPLAR_INST_IS_UNDEAD
+    set_exemplar_inst();
+
+    {
+        std::stringstream ss;
+        ss << "Exemplar instance: " << _fields.to_string(_exemplar_inst);
+        logger().debug(ss.str());
+    }
+#endif // EXEMPLAR_INST_IS_UNDEAD
+}
 representation::representation(const reduct::rule& simplify_candidate,
                                const reduct::rule& simplify_knob_building,
                                const Handle& exemplar_,
@@ -218,8 +238,10 @@ representation::representation(const reduct::rule& simplify_candidate,
 
     // output stream the the newly decoreted atomese program
 
-    
+
 }
+
+void representation::knob_to_field_set_converter() {
 #if 0
     // Attempt to adjust the contin spec step size to a value that is
     // "most likely to be useful" for exploring the neighborhood of an
@@ -292,22 +314,6 @@ representation::representation(const reduct::rule& simplify_candidate,
     logger().info() << "Field set, in bytes: " << _fields.byte_size();
     size_t is = sizeof(instance) + sizeof(packed_t) * _fields.packed_width();
     logger().info() << "One instance, in bytes: " << is;
-
-    if (logger().is_debug_enabled()) {
-        std::stringstream ss;
-        ostream_prototype(ss << "Created prototype: ");
-        logger().debug(ss.str());
-    }
-
-#ifdef EXEMPLAR_INST_IS_UNDEAD
-    set_exemplar_inst();
-
-    {
-        std::stringstream ss;
-        ss << "Exemplar instance: " << _fields.to_string(_exemplar_inst);
-        logger().debug(ss.str());
-    }
-#endif // EXEMPLAR_INST_IS_UNDEAD
 }
 
 /// Turn the knobs on the representation, so that the knob settings match
