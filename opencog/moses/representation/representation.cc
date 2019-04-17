@@ -103,6 +103,53 @@ combo_tree type_to_exemplar(type_node type)
     return combo_tree();
 }
 
+Handle atomese_type_to_exemplar(const type_node type)
+{
+
+    Handle handle;
+    HandleSeq handleSeq = {};
+    switch(type) {
+        case id::boolean_type: {
+            handle = createLink(handleSeq, AND_LINK);
+            return handle;
+        }
+        case id::contin_type: {
+            handle = createLink(handleSeq, AND_LINK);
+            return handle;
+        }
+        case id::ill_formed_type:
+        OC_ASSERT(false, "Error: the data type is incorrect, "
+                         "perhaps it has not been possible to infer it from the "
+                         "input table.");
+        default: {
+            std::stringstream ss;
+            ss << "Error: type \"" << type << "\" not supported";
+            OC_ASSERT(false, ss.str());
+        }
+    }
+}
+
+type_node atomeseType_to_type_node(const Type& type)
+{
+	if (type == AND_LINK || type == OR_LINK
+		|| type == TRUE_LINK || type == FALSE_LINK
+		|| type == PREDICATE_NODE || type == NOT_LINK)
+	{
+		return id::boolean_type;
+	}
+	else if (type == PLUS_LINK || type == TIMES_LINK
+			|| type == DIVIDE_LINK || type == MINUS_LINK
+			|| type == SCHEMA_NODE)
+	{
+		return id::contin_type;
+	}
+	else {
+		std::stringstream ss;
+		ss << "Error: type \"" << type << "\" not supported";
+		OC_ASSERT(false, ss.str());
+	}
+}
+
 representation::representation(const reduct::rule& simplify_candidate,
                                const reduct::rule& simplify_knob_building,
                                const combo_tree& exemplar_,
