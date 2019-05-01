@@ -37,6 +37,13 @@
 #include <opencog/reduct/rules/meta_rules.h>
 #include <opencog/reduct/rules/general_rules.h>
 
+#include <opencog/combo/converter/combo_atomese.h>
+#include <opencog/combo/combo/combo.h>
+#include <opencog/atoms/atom_types/atom_types.h>
+#include <opencog/atoms/base/Handle.h>
+#include <opencog/atoms/base/Link.h>
+#include <opencog/atoms/base/Node.h>
+#include <opencog/atoms/core/NumberNode.h>
 #include "build_knobs.h"
 
 using namespace std;
@@ -131,6 +138,47 @@ build_knobs_combo::build_knobs_combo(combo_tree& exemplar,
     }
 }
 
+build_knobs_atomese::build_knobs_atomese(Handle& exemplar,
+                         const Type& tt,
+                         representation& rep,
+                         const HandleSet& ignore_ops,
+                         const HandleSeqSet& perceptions,
+                         const HandleSeqSet& actions,
+                         bool linear_regression,
+                         contin_t step_size,
+                         contin_t expansion,
+                         field_set::width_t depth,
+                         float perm_ratio)
+    : _exemplar(exemplar), _rep(rep), _skip_disc_probe(true),
+      _arity(static_cast<const arity_t>(exemplar->get_arity())),
+      _linear_contin(linear_regression), _signature(tt),
+      _step_size(step_size), _expansion(expansion), _depth(depth),
+      _perm_ratio(perm_ratio), _ignore_ops(ignore_ops),
+      _perceptions(perceptions), _actions(actions)
+{
+	type_node output_type = atomeseType_to_type_node(tt);
+	if(output_type == id::boolean_type) {
+		logical_canonize(_exemplar);
+		build_logical(_exemplar, _exemplar);
+		_handle_seq.clear();
+		_type_store.clear();
+		logical_cleanup();
+	}
+	else if (output_type == id::contin_type) {
+
+		std::stringstream ss;
+		ss << output_type;
+		OC_ASSERT(0, "Unsupported output type, got '%s'",
+		          ss.str().c_str());
+	}
+	else {
+		std::stringstream ss;
+		ss << output_type;
+		OC_ASSERT(0, "Unsupported output type, got '%s'",
+		          ss.str().c_str());
+	}
+}
+
 /**
  * permitted_op -- return true if the vertex is a permitted operator.
  *
@@ -190,6 +238,427 @@ void build_knobs_combo::logical_canonize(pre_it it)
         OC_ASSERT(0, "Error: during logical_canonize, got unexpected "
              " type in logical expression.");
     }
+}
+
+/**
+ * @param handle
+ */
+
+void  build_knobs_atomese::logical_canonize(Handle& handle) {
+	Type type = handle->get_type();
+	if (type == AND_LINK) {
+		HandleSeq handleSeq = {_exemplar};
+		_exemplar = createLink(handleSeq, OR_LINK);
+	}
+	else if (type == OR_LINK) {
+		HandleSeq handleSeq = {_exemplar};
+		_exemplar = createLink(handleSeq, AND_LINK);
+	}
+	else if (type == TRUE_LINK || type == FALSE_LINK) {
+		HandleSeq andSeq = {};
+		Handle andlink = createLink(andSeq, AND_LINK);
+		HandleSeq handleSeq = {_exemplar, andlink};
+		_exemplar = createLink(handleSeq, OR_LINK);
+	}
+	else if (type == PREDICATE_NODE) {
+		OC_ASSERT(0, "Error: not Implemented yet.");
+	}
+	else {
+		OC_ASSERT(0, "Error: during logical_canonize, got unexpected "
+		             " type in logical expression.");
+	}
+}
+
+void build_knobs_atomese::build_logical(Handle& sub_handle,
+										Handle& handle)
+{
+	Type flip = NOTYPE;
+
+	Type tt = handle->get_type();
+	if (tt == NOT_LINK ) {
+		OC_ASSERT(false,
+				"Error: the tree is supposed to be in normal form,"
+	            " and thus must not contain NOT_LINK nodes")
+	}
+	else if (tt == AND_LINK)
+	{
+		flip = OR_LINK;
+	}
+	else if (tt == OR_LINK)
+	{
+		flip = AND_LINK;
+	}
+
+	if (flip == NOTYPE)
+		return;
+
+	logger().debug("First call to add_logical_knobs");
+	// add_logical_knobs
+	add_logical_knobs(sub_handle, handle);
+
+	HandleSeq sib = handle->getOutgoingSet();
+	for (auto handle_sib: sib) {
+        if( handle_sib->get_type() == NOTYPE) {
+            break;
+        }
+
+		if (handle_sib->is_link()) {
+            logger().debug("Recursive call to build_logical");
+            build_logical(sub_handle, handle_sib);
+            logger().debug("Return from recursive call to build_logical");
+		}
+		else {
+			logger().debug("Call add_logical_knobs for node");
+			_handle_seq.clear();
+			insert_atom(_exemplar, handle_sib, flip);
+            add_logical_knobs(sub_handle, _exemplar, false);
+		}
+	}
+
+	logger().debug("call add_logical_knobs for flipped sub program");
+    HandleSeq handleSeq1 = {handle};
+    _handle_seq.clear();
+    append_atom(_exemplar, handle, flip);
+	add_logical_knobs(sub_handle, _exemplar);
+
+}
+
+
+void build_knobs_atomese::add_logical_knobs(opencog::Handle &sub,
+											opencog::Handle &handle,
+											bool add_if_in_exemplar) {
+	// check is logical
+	if(logger().is_debug_enabled()) {
+		logger().debug() << "Adding logical knobs to subtree of size="
+						 << sub->get_arity()
+						 << " at location of size="
+						 << handle->get_arity();
+		if(logger().is_fine_enabled()) {
+			logger().fine() << "sub handle = " << oc_to_string(sub, opencog::empty_string);
+			logger().fine() << "handle = " << oc_to_string(handle, opencog::empty_string);
+		}
+	}
+	HandleSeq perms;
+	sample_logical_perms(handle, perms);
+#define BREAKEVEN 30000
+	size_t np = perms.size();
+	int nthr = 1 + np / BREAKEVEN;
+	int maxth = num_threads();
+	if (nthr > maxth) nthr = maxth;
+
+	if (logger().is_debug_enabled()) {
+		logger().debug("Created %d logical knob subtrees", np);
+		if (_skip_disc_probe)
+			logger().debug("Will skip expensive disc_probe()");
+		else
+			logger().debug("Will perform expensive disc_probe()");
+	}
+
+	// The actual running time for logical_probe_rec seems to take
+	// 1.5 to 5 millisecs per subtree node, when disc_probe_rec is
+	// enabled.
+
+	// conversion is happening because we are using the combo Reduct
+
+	combo::AtomeseToCombo to_combo;
+
+	// convert sub program handle to combo
+	auto subtree_tree = to_combo(sub);
+	pre_it subtree = subtree_tree.first.begin();
+
+	// convert _exemplar to _combo_exemplar
+	auto combo_exemplar = to_combo(_exemplar);
+
+	// convert it exemplar to combo
+    auto tr = to_combo(handle);
+	pre_it it = tr.first.begin();
+
+	// convert handle perms to combo perms
+	combo_tree_seq combo_perms;
+	for(int i = 0; i < perms.size(); i++) {
+		auto perms_tree = to_combo(perms[i]);
+		combo_perms.push_back(perms_tree.first);
+	}
+
+	// knob probing.
+	boost::ptr_vector<logical_subtree_knob> kb_v =
+			build_knobs_atomese::logical_probe_rec(subtree, combo_exemplar.first, it, combo_perms.begin(), combo_perms.end(),
+			                  add_if_in_exemplar, nthr);
+
+	// convert the _combo_exemplar after knob probing
+	combo::ComboToAtomese to_atomese;
+	_exemplar = to_atomese(combo_exemplar.first);
+
+	logger().debug("Adding %d logical knobs", kb_v.size());
+	for (const logical_subtree_knob& kb : kb_v) {
+		_rep.disc.insert(make_pair(kb.spec(), kb));
+	}
+}
+
+void build_knobs_atomese::sample_logical_perms(opencog::Handle &handle,
+											   opencog::HandleSeq &perms) {
+    HandleSeq handleSeq1;
+    if (handle->is_link()) {
+        HandleSeq handleSeq = handle->getOutgoingSet();
+        for (int i =0; i < handleSeq.size(); i++)
+        {
+            Handle arg = handleSeq[i];
+            if(arg->is_link()) {
+                handleSeq1 = arg->getOutgoingSet();
+                for (int j=0; j < handleSeq1.size(); j++) {
+                    Handle arg_x = handleSeq1[j];
+                    if(permitted_op(arg_x)) {
+                        perms.push_back(arg_x);
+                    }
+                    else if (atomeseType_to_type_node(arg->get_type()) == id::contin_type) {
+                        OC_ASSERT(false," Not Implemented Yet!");
+                    }
+                }
+            } else {
+                if(permitted_op(arg)) {
+                    perms.push_back(arg);
+                }
+            }
+        }
+    }
+    else {
+        if (permitted_op(handle)) {
+            perms.push_back(handle);
+        }
+    }
+
+	if(_perm_ratio <= -1.0)
+		return;
+
+
+    vector<pair<arity_t, arity_t>> permitted_perms;
+	if (handle->is_link()) {
+	    HandleSeq handleSeq = handle->getOutgoingSet();
+        Handle arg_a;
+        Handle arg_b;
+        for (int a = 0; a < handleSeq.size(); a++) {
+            arg_a = handleSeq[a];
+            if (permitted_op(arg_a)) {
+                for (arity_t b = 0; b < handleSeq.size(); b++) {
+                    arg_b = handleSeq[b];
+                    if (permitted_op(arg_b) and a != b) {
+                        permitted_perms.push_back({a, b});
+                    }
+                }
+            }
+        }
+	}
+
+	unsigned max_pairs = permitted_perms.size();
+	if (max_pairs == 0)
+		return;
+
+	unsigned ps = perms.size();
+	size_t n_pairs = 0;
+	if (0.0 < _perm_ratio)
+		n_pairs = static_cast<size_t>(floor(ps + _perm_ratio * (max_pairs - ps)));
+	else {
+		n_pairs = static_cast<size_t>(floor((1.0 + _perm_ratio) * ps));
+	}
+
+	if (logger().is_debug_enabled()) {
+		logger().debug() << "perms.size: " << ps
+						 << " max_pairs: " << max_pairs
+						 << " logical knob pairs to create: "<< n_pairs;
+	}
+
+	lazy_random_selector randpair(max_pairs);
+	Handle h;
+	dorepeat(n_pairs) {
+		size_t i = randpair();
+
+		const pair<arity_t, arity_t>& ppr = permitted_perms[i];
+		arity_t a = ppr.first;
+		arity_t b = ppr.second;
+
+		//
+
+        HandleSeq handleSeq = handle->getOutgoingSet();
+		Handle handle_arg_a = handleSeq[a];
+		Handle handle_arg_b = handleSeq[b];
+
+		Handle perm = swap_and_or(handle);
+
+		if (b < a) {
+			insert_handle_arg(perm, handle_arg_b);
+			insert_handle_arg(perm, handle_arg_a);
+		}
+		else {
+			insert_handle_arg(perm, handle_arg_a, true);
+			insert_handle_arg(perm, handle_arg_b);
+		}
+		perms.push_back(perm);
+	}
+
+	if (logger().is_fine_enabled())
+		ostream_container(logger().fine() << "Perms:" << std::endl, perms, "\n");
+}
+
+
+void build_knobs_atomese::insert_handle_arg(opencog::Handle &handle,
+											opencog::Handle &handle_arg,
+											bool negate) {
+	Type type = handle->get_type();
+	type_node arg_type = atomeseType_to_type_node(type);
+	if (arg_type == id::boolean_type)
+	{
+		if(negate) {
+			HandleSeq handleSeq = {handle};
+			handle = createLink(handleSeq, NOT_LINK);
+		}
+		HandleSeq handleSeq1 = {handle->getOutgoingSet()};
+		handleSeq1.push_back(handle_arg);
+		handle = createLink(handleSeq1, handle->get_type());
+	} else if (arg_type == id::contin_type) {
+		OC_ASSERT(false," Not Implemented Yet!");
+	}
+}
+
+bool build_knobs_atomese::permitted_op(const opencog::Handle &h) {
+	return _ignore_ops.find(h) == _ignore_ops.end();
+}
+
+Handle build_knobs_atomese::swap_and_or(Handle& handle) {
+	Type type = handle->get_type();
+	HandleSeq handleSeq = handle->getOutgoingSet();
+	OC_ASSERT(type == AND_LINK || type == OR_LINK);
+	return type == AND_LINK ? createLink(handleSeq, OR_LINK) : createLink(handleSeq, AND_LINK);
+}
+
+
+void build_knobs_atomese::insert_atom(Handle& handle, Handle& find,
+                                      Type type) {
+
+    if(content_eq(find, handle)) {
+        Logger().debug() << "find and replace";
+        for (int i = 0; i < _handle_seq.size(); ++i) {
+        	if (content_eq(_handle_seq[i], find)) {
+        		HandleSeq handleSeq;
+        		handleSeq.push_back(_handle_seq[i]);
+        		_handle_seq[i] = createLink(handleSeq, type);
+				break;
+        	}
+        }
+        std::map<Type, int>::reverse_iterator rit;
+        int handleSeq_size = _handle_seq.size();
+        HandleSeq handleSeq1;
+		for (rit=_type_store.rbegin(); rit!=_type_store.rend(); ++rit) {
+			int limit = handleSeq_size - rit->second;
+			for (int j = handleSeq_size - 1; j >= limit; --j) {
+				handleSeq1.push_back(_handle_seq[j]);
+			}
+			handleSeq_size = limit;
+			_handle_seq[limit] = createLink(handleSeq1, rit->first);
+		}
+		handle = _handle_seq[0];
+    }
+    else {
+        if(handle->is_link()) {
+            HandleSeq handleSeq_handle = handle->getOutgoingSet();
+			_type_store.insert(make_pair(handle->get_type(), handleSeq_handle.size()));
+            for(auto sib: handleSeq_handle) {
+            	_handle_seq.push_back(sib);
+            }
+            for(auto sib: handleSeq_handle) {
+                insert_atom(sib,find, type);
+            }
+        }
+        else {
+            _handle_seq.push_back(handle);
+        }
+    }
+}
+
+void build_knobs_atomese::append_atom(Handle& handle, Handle& find,
+                 Type type) {
+    if (handle->is_node()) {
+        return;
+    }
+
+    if(content_eq(find, handle)) {
+        Logger().debug() << "find and replace";
+        for (int i = 0; i < _handle_seq.size(); ++i) {
+            if (content_eq(_handle_seq[i], find)) {
+                Handle handle1;
+                HandleSeq handleSeq2;
+                HandleSeq handleSeq = handle->getOutgoingSet();
+                handle1 = createLink(handleSeq2, type);
+                handleSeq.push_back(handle1);
+                _handle_seq[i] = createLink(handleSeq, handle->get_type());
+                break;
+            }
+        }
+        std::map<Type, int>::reverse_iterator rit;
+        int handleSeq_size = _handle_seq.size();
+        HandleSeq handleSeq1;
+        for (rit=_type_store.rbegin(); rit!=_type_store.rend(); ++rit) {
+            int limit = handleSeq_size - rit->second;
+            for (int j = handleSeq_size - 1; j >= limit; --j) {
+                handleSeq1.push_back(_handle_seq[j]);
+            }
+            handleSeq_size = limit;
+            _handle_seq[limit] = createLink(handleSeq1, rit->first);
+        }
+        handle = _handle_seq[0];
+    }
+    else {
+        if(handle->is_link()) {
+            HandleSeq handleSeq_handle = handle->getOutgoingSet();
+            _type_store.insert(make_pair(handle->get_type(), handleSeq_handle.size()));
+            for(auto sib: handleSeq_handle) {
+                _handle_seq.push_back(sib);
+            }
+            for(auto sib: handleSeq_handle) {
+                insert_atom(sib,find, type);
+            }
+        }
+        else {
+            _handle_seq.push_back(handle);
+        }
+    }
+}
+
+void build_knobs_atomese::logical_cleanup() {
+	store_handle(_exemplar);
+
+	std::map<Type, int>::reverse_iterator rit;
+	int handleSeq_size = _handle_seq.size();
+	HandleSeq handleSeq1;
+	for (rit=_type_store.rbegin(); rit!=_type_store.rend(); ++rit) {
+		int limit = handleSeq_size - rit->second;
+		for (int j = handleSeq_size - 1; j >= limit; --j) {
+			handleSeq1.push_back(_handle_seq[j]);
+		}
+		handleSeq_size = limit;
+		_handle_seq[limit] = createLink(handleSeq1, rit->first);
+	}
+	_exemplar = _handle_seq[0];
+}
+
+void build_knobs_atomese::store_handle(Handle& handle, int num) {
+	if (handle->is_link()) {
+		if (handle->get_arity() > 0) {
+			HandleSeq handleSeq_handle = handle->getOutgoingSet();
+			_type_store.insert(make_pair(handle->get_type(), handleSeq_handle.size()));
+			for (auto sib: handleSeq_handle) {
+				_handle_seq.push_back(sib);
+			}
+			for (auto sib: handleSeq_handle) {
+				store_handle(sib, ++num);
+			}
+		}
+		else {
+			_type_store[_handle_seq[num-1]->get_type()] = 1;
+		}
+	}
+	else {
+		_handle_seq.push_back(handle);
+	}
 }
 
 
@@ -282,57 +751,65 @@ build_knobs_combo::logical_probe_rec(pre_it subtree,
     }
 }
 
+
+template<typename It>
+boost::ptr_vector<logical_subtree_knob>
+build_knobs_atomese::logical_probe_rec(pre_it subtree,
+									 combo_tree& exemplr, pre_it it,
+									 It from, It to,
+									 bool add_if_in_exemplar,
+									 unsigned n_jobs) const
 {
-    if (n_jobs > 1) {
-        auto s_jobs = split_jobs(n_jobs);
+	if (n_jobs > 1) {
+		auto s_jobs = split_jobs(n_jobs);
 
-        // Define new range
-        It mid = from + std::distance(from, to) / 2;
+		// Define new range
+		It mid = from + std::distance(from, to) / 2;
 
-        // Copy exemplar and it for the second recursive call (this
-        // has to be put before the asyncronous call to avoid
-        // read/write conflicts)
-        combo_tree exemplr_cp(exemplr);
-        pre_it it_cp = next(exemplr_cp.begin(), std::distance(exemplr.begin(), it));
-        pre_it subtree_cp = next(exemplr_cp.begin(), std::distance(exemplr.begin(), subtree));
+		// Copy exemplar and it for the second recursive call (this
+		// has to be put before the asyncronous call to avoid
+		// read/write conflicts)
+		combo_tree exemplr_cp(exemplr);
+		pre_it it_cp = next(exemplr_cp.begin(), std::distance(exemplr.begin(), it));
+		pre_it subtree_cp = next(exemplr_cp.begin(), std::distance(exemplr.begin(), subtree));
 
-        // asynchronous recursive call for [from, mid)
-        std::future<boost::ptr_vector<logical_subtree_knob>> f_async =
-            async(std::launch::async,
-                  [&]() {return this->logical_probe_rec(subtree, exemplr, it,
-                                                        from, mid,
-                                                        add_if_in_exemplar,
-                                                        s_jobs.first);});
+		// asynchronous recursive call for [from, mid)
+		std::future<boost::ptr_vector<logical_subtree_knob>> f_async =
+				async(std::launch::async,
+					  [&]() {return this->logical_probe_rec(subtree, exemplr, it,
+															from, mid,
+															add_if_in_exemplar,
+															s_jobs.first);});
 
-        // synchronous recursive call for [mid, to) on the copy
-        boost::ptr_vector<logical_subtree_knob> kb_copy_v =
-            logical_probe_rec(subtree_cp, exemplr_cp, it_cp, mid, to,
-                              add_if_in_exemplar, s_jobs.second);
+		// synchronous recursive call for [mid, to) on the copy
+		boost::ptr_vector<logical_subtree_knob> kb_copy_v =
+				logical_probe_rec(subtree_cp, exemplr_cp, it_cp, mid, to,
+								  add_if_in_exemplar, s_jobs.second);
 
-        // append kb_copy_v to kb_v
-        auto kb_v = f_async.get();
-        for (const logical_subtree_knob& kb_copy : kb_copy_v) {
-            kb_v.push_back(new logical_subtree_knob(exemplr, it, kb_copy));
-        }
-        return kb_v;
-    } else {
-        boost::ptr_vector<logical_subtree_knob> kb_v;
-        while (from != to) {
-            auto kb = new logical_subtree_knob(exemplr, it, from->begin());
-            if ((add_if_in_exemplar || !kb->in_exemplar())
-                && disc_probe(subtree, *kb))
-            {
-                kb_v.push_back(kb);
-            }
-            else
-            {
-                // gahh. Memory leak if not pushed back!
-                delete kb;
-            }
-            ++from;
-        }
-        return kb_v;
-    }
+		// append kb_copy_v to kb_v
+		auto kb_v = f_async.get();
+		for (const logical_subtree_knob& kb_copy : kb_copy_v) {
+			kb_v.push_back(new logical_subtree_knob(exemplr, it, kb_copy));
+		}
+		return kb_v;
+	} else {
+		boost::ptr_vector<logical_subtree_knob> kb_v;
+		while (from != to) {
+			auto kb = new logical_subtree_knob(exemplr, it, from->begin());
+			if ((add_if_in_exemplar || !kb->in_exemplar())
+				&& disc_probe(subtree, *kb))
+			{
+				kb_v.push_back(kb);
+			}
+			else
+			{
+				// gahh. Memory leak if not pushed back!
+				delete kb;
+			}
+			++from;
+		}
+		return kb_v;
+	}
 }
 
 void build_knobs_combo::logical_cleanup()
@@ -435,6 +912,64 @@ bool build_knobs_combo::disc_probe(pre_it subtree, disc_knob_base& kb) const
         return false;
     }
 }
+bool build_knobs_atomese::disc_probe(pre_it subtree, disc_knob_base& kb) const
+{
+    using namespace reduct;
+
+    // Probing is expensive, see comments above. Skip if at all possible.
+    if (_skip_disc_probe) return true;
+
+    vector<int> to_disallow;
+
+    for (int idx : boost::irange(1, kb.multiplicity())) {
+        kb.turn(idx);
+
+        /// @todo could use kb.complexity_bound() to be faster, but
+        /// there is a strange thing with kb.complexity_bound()
+        /// because apparently when it is 0 it actually makes
+        /// _exemplar simpler (??? XXX ??? huh?)
+
+        // We halt complexity searches underneath contins, since anything
+        // down there will be preceeded by contin knobs, which are
+        // mis-understood by tree complexity (i.e. tree_complexity halts
+        // recurision when it sees a null_vertex, which denotes a logical
+        // knob, but fails to spot *(0 stuff) which is a contin knob.)
+        complexity_t initial_c = tree_complexity(subtree, is_predicate);
+
+        // get cleaned and reduced (according to
+        // _simplify_knob_building) exemplar
+        combo_tree tmp(subtree); // make a copy -- caution, expensive!
+        _rep.clean_combo_tree(tmp, true, true);
+
+        // Note that complexity is positive, with 0 being the simplest
+        // possible tree (the empty tree).   We disallow settings that
+        // reduce the complexity of the tree.
+        complexity_t tmp_cmp = tree_complexity(tmp, is_predicate);
+        if (initial_c > tmp_cmp) {
+            to_disallow.push_back(idx);
+        }
+    }
+    kb.turn(0);
+
+    // logger().fine("Disc probe mpy=%d disallow=%d tree=",
+    //      kb.multiplicity(), to_disallow.size()); // << combo_tree(subtree);
+
+    // If any settings aren't disallowed, make a knob.
+    // If all settings are disallowed, there will be no knob.
+    if (int(to_disallow.size()) < kb.multiplicity() - 1) {
+
+        // if (to_disallow.size() != 0)
+        //    logger().fine("Disallowing %d knob settings", to_disallow.size());
+        for (int idx : to_disallow)
+            kb.disallow(idx);
+        return true;
+    } else {
+        // logger().fine() << "No knob will be built for " << combo_tree(subtree);
+        kb.clear_exemplar();
+        return false;
+    }
+}
+
 
 // ***********************************************************************
 // Predicate (mixed) trees: mixture of logical and predicate terms.

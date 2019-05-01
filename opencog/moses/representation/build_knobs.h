@@ -200,6 +200,93 @@ protected:
 
 };
 
+struct build_knobs_atomese : boost::noncopyable
+{
+	build_knobs_atomese(Handle& exemplar,
+						const Type& tt,
+						representation& rep,
+						const HandleSet& ignore_ops,
+						const HandleSeqSet& perceptions = {},
+						const HandleSeqSet& actions = {},
+						bool linear_regression = true,
+						contin_t step_size = 1.0,
+						contin_t expansion = 1.0,
+						field_set::width_t depth = 4,
+						float perm_ratio = 0.0);
+
+protected:
+	void build_logical(Handle& sub_handle, Handle& handle);
+
+
+protected:
+	Handle& _exemplar;
+
+	representation& _rep;
+
+	bool _skip_disc_probe;
+
+	const arity_t _arity;
+
+	const Type _signature;
+
+	bool _linear_contin;
+
+	contin_t _step_size, _expansion;
+	field_set::width_t _depth;
+
+	float _perm_ratio;
+
+	const HandleSet& _ignore_ops;
+
+	const HandleSeqSet& _perceptions;
+
+	const HandleSeqSet& _actions;
+
+    HandleSeq _handle_seq;
+
+    std::map<Type, int> _type_store;
+protected:
+	bool permitted_op(const Handle& h);
+	/**
+	 * Disallow settings of kb that result in a shorter candidate if
+	 * reduced.
+	 *
+	 * Return false if all settings are disallowed, true otherwise.
+ 	*/
+
+	void logical_canonize(Handle& handle);
+
+	void add_logical_knobs(Handle& sub,
+						   Handle& handle,
+						   bool add_if_in_exemplar = true);
+
+	void sample_logical_perms(Handle& handle, HandleSeq& perms);
+
+	void insert_handle_arg(Handle& handle, Handle& arg,
+						   bool negate = false);
+
+	Handle swap_and_or(Handle& handle);
+
+	void insert_atom(Handle& handle, Handle& find,
+	                    Type type);
+	
+    void append_atom(Handle& handle, Handle& find,
+            Type type);
+
+    template<typename It>
+    boost::ptr_vector<logical_subtree_knob> logical_probe_rec(
+            combo_tree::iterator subtree,
+            combo_tree& exemplar,
+            combo_tree::iterator it,
+            It from, It to,
+            bool add_if_in_exemplar,
+            unsigned n_jobs = 1) const;
+
+    bool disc_probe(combo_tree::iterator subtree, disc_knob_base& kb) const;
+
+    void logical_cleanup();
+
+    void store_handle(Handle& handle, int num = 0);
 } //~namespace moses
 } //~namespace opencog
 
