@@ -262,16 +262,10 @@ protected:
 
 	void sample_logical_perms(Handle& handle, HandleSeq& perms);
 
+    void sample_store_nodes(Handle& handle, bool is_first= true);
+
 	void insert_handle_arg(Handle& handle, Handle& arg,
 						   bool negate = false);
-
-	Handle swap_and_or(Handle& handle);
-
-	void insert_atom(Handle& handle, Handle& find,
-	                    Type type);
-	
-    void append_atom(Handle& handle, Handle& find,
-            Type type);
 
     template<typename It>
     boost::ptr_vector<logical_subtree_knob> logical_probe_rec(
@@ -286,7 +280,27 @@ protected:
 
     void logical_cleanup();
 
-    void store_handle(Handle& handle, int num = 0);
+    // Hypergraph Rewriting functions
+
+
+    void insert_atom_above(Handle& handle, Handle& find,
+                     Type type, bool is_first= true);
+
+    void append_atom_below(Handle& handle, Handle& find,
+                     Type type, bool is_first= true);
+
+    Handle swap_and_or(Handle& handle);
+
+    void store_handle(Handle& handle, int num = 0,
+                      bool is_first = true);
+
+    // move 'Source; node(plus it's children) to become the next siblings.
+    void move_after(Handle& handle,Handle& target,
+                    Handle& source, bool is_first= true);
+
+
+    Handle swap_last(const Handle& handle, const Handle& last, bool first = true);
+
 } //~namespace moses
 } //~namespace opencog
 

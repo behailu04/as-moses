@@ -221,7 +221,7 @@ representation::representation(const reduct::rule& simplify_candidate,
       _simplify_knob_building(&simplify_knob_building)
 {
     logger().info() << "Start knob building, rep size="
-                    << _atomese_exemplar->get_arity()
+                    << _atomese_exemplar->size()
                     <<" complexity="
                     << atomese_complexity(_atomese_exemplar);
 
@@ -235,9 +235,6 @@ representation::representation(const reduct::rule& simplify_candidate,
     }
 
     knob_to_field_set_converter();
-
-    // output stream the the newly decoreted atomese program
-
 
 }
 
@@ -314,6 +311,21 @@ void representation::knob_to_field_set_converter() {
     logger().info() << "Field set, in bytes: " << _fields.byte_size();
     size_t is = sizeof(instance) + sizeof(packed_t) * _fields.packed_width();
     logger().info() << "One instance, in bytes: " << is;
+
+    if (logger().is_debug_enabled()) {
+        std::stringstream ss;
+        ostream_prototype(ss << "created prototype: ");
+        logger().debug(ss.str());
+    }
+#ifdef EXEMPLAR_INST_IS_UNDEAD
+    set_exemplar_inst();
+
+    {
+        std::stringstream ss;
+        ss << "Exemplar instance: " << _fields.to_string(_exemplar_inst);
+        logger().debug(ss.str());
+    }
+#endif // EXEMPLAR_INST_IS_UNDEAD
 }
 
 /// Turn the knobs on the representation, so that the knob settings match
