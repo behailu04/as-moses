@@ -241,6 +241,237 @@ void build_knobs_combo::logical_canonize(pre_it it)
 }
 
 /**
+ * Hypergraph Rewriting Functions
+ *
+ */
+void build_knobs_atomese::insert_atom_above(Handle& handle, Handle& find,
+                                      Type type, bool is_first) {
+    if(is_first) {
+        _handle_seq.clear();
+        _type_store.clear();
+    }
+    if(content_eq(find, handle)) {
+        for (int i = 0; i < _handle_seq.size(); ++i) {
+            if (content_eq(_handle_seq[i], find)) {
+                HandleSeq handleSeq;
+                handleSeq.push_back(_handle_seq[i]);
+                _handle_seq[i] = createLink(handleSeq, type);
+                break;
+            }
+        }
+        std::map<Type, int>::reverse_iterator rit;
+        int handleSeq_size = _handle_seq.size();
+        HandleSeq handleSeq1;
+        for (rit=_type_store.rbegin(); rit!=_type_store.rend(); ++rit) {
+            int limit = handleSeq_size - rit->second;
+            if (handleSeq_size > 0) {
+                for (int j = handleSeq_size - 1; j > limit-1; --j) {
+                    handleSeq1.push_back(_handle_seq[j]);
+                }
+                handleSeq_size = limit+1;
+                _handle_seq[limit] = createLink(handleSeq1, rit->first);
+                handleSeq1.clear();
+            }
+        }
+        _exemplar = _handle_seq[1];
+    }
+    else {
+        if(handle->is_link()) {
+            HandleSeq handleSeq_handle = handle->getOutgoingSet();
+            _type_store.insert(make_pair(handle->get_type(), handleSeq_handle.size()));
+            for(auto sib: handleSeq_handle) {
+                _handle_seq.push_back(sib);
+            }
+            for(auto sib: handleSeq_handle) {
+                insert_atom_above(sib,find, type, false);
+                break;
+            }
+        }
+        else {
+            _handle_seq.push_back(handle);
+        }
+    }
+}
+
+void build_knobs_atomese::append_atom_below(Handle& handle, Handle& find,
+                                      Type type, bool is_first) {
+    if(is_first) {
+        _handle_seq.clear();
+        _type_store.clear();
+    }
+    if (handle->is_node()) {
+        return;
+    }
+
+    if(content_eq(find, handle)) {
+        Logger().debug() << "find and replace";
+        for (int i = 0; i < _handle_seq.size(); ++i) {
+            if (content_eq(_handle_seq[i], find)) {
+                Handle handle1;
+                HandleSeq handleSeq2;
+                HandleSeq handleSeq = handle->getOutgoingSet();
+                handle1 = createLink(handleSeq2, type);
+                handleSeq.push_back(handle1);
+                _handle_seq[i] = createLink(handleSeq, handle->get_type());
+                break;
+            }
+        }
+        std::map<Type, int>::reverse_iterator rit;
+        int handleSeq_size = _handle_seq.size();
+        HandleSeq handleSeq1;
+        for (rit=_type_store.rbegin(); rit!=_type_store.rend(); ++rit) {
+            int limit = handleSeq_size - rit->second;
+            for (int j = handleSeq_size - 1; j >= limit; --j) {
+                handleSeq1.push_back(_handle_seq[j]);
+            }
+            handleSeq_size = limit;
+            _handle_seq[limit] = createLink(handleSeq1, rit->first);
+        }
+        _exemplar = _handle_seq[0];
+    }
+    else {
+        if(handle->is_link()) {
+            HandleSeq handleSeq_handle = handle->getOutgoingSet();
+            _type_store.insert(make_pair(handle->get_type(), handleSeq_handle.size()));
+            for(auto sib: handleSeq_handle) {
+                _handle_seq.push_back(sib);
+            }
+            for(auto sib: handleSeq_handle) {
+                append_atom_below(sib,find, type, false);
+            }
+        }
+        else {
+            _handle_seq.push_back(handle);
+        }
+    }
+}
+
+Handle build_knobs_atomese::swap_last(const opencog::Handle &handle, const Handle &last,
+        bool is_first) {
+    if(is_first) {
+        _handle_seq.clear();
+        _type_store.clear();
+    }
+    if(handle->is_link()) {
+        HandleSeq handleSeq_handle = handle->getOutgoingSet();
+        _type_store.insert(make_pair(handle->get_type(), handleSeq_handle.size()));
+        for (auto sib: handleSeq_handle) {
+            _handle_seq.push_back(sib);
+        }
+        for (auto sib: handleSeq_handle) {
+            swap_last(handle, last, false);
+        }
+    } else {
+        _handle_seq.push_back(handle);
+
+    }
+}
+
+void build_knobs_atomese::move_after(Handle& handle,
+                                     Handle &target, Handle &source,
+                                     bool is_first) {
+    if(is_first) {
+        _handle_seq.clear();
+        _type_store.clear();
+    }
+    if (handle->is_node()) {
+        return;
+    }
+
+    if(content_eq(target, handle)) {
+        for (int i = 0; i < _handle_seq.size(); ++i) {
+            if (content_eq(_handle_seq[i], target)) {
+                Handle handle1;
+                HandleSeq handleSeq = handle->getOutgoingSet();
+                handleSeq.push_back(source);
+                handle1 = createLink(handleSeq, _handle_seq[i-1]->get_type());
+                handleSeq.push_back(handle1);
+                _handle_seq[i] = createLink(handleSeq, handle->get_type());
+                break;
+            }
+        }
+        std::map<Type, int>::reverse_iterator rit;
+        int handleSeq_size = _handle_seq.size();
+        HandleSeq handleSeq1;
+        for (rit=_type_store.rbegin(); rit!=_type_store.rend(); ++rit) {
+            int limit = handleSeq_size - rit->second;
+            for (int j = handleSeq_size - 1; j >= limit; --j) {
+                handleSeq1.push_back(_handle_seq[j]);
+            }
+            handleSeq_size = limit;
+            _handle_seq[limit] = createLink(handleSeq1, rit->first);
+        }
+        _exemplar = _handle_seq[0];
+    }
+    else {
+        if(handle->is_link()) {
+            HandleSeq handleSeq_handle = handle->getOutgoingSet();
+            _type_store.insert(make_pair(handle->get_type(), handleSeq_handle.size()));
+            for(auto sib: handleSeq_handle) {
+                _handle_seq.push_back(sib);
+            }
+            for(auto sib: handleSeq_handle) {
+                move_after(sib, target, source, false);
+            }
+        }
+        else {
+            _handle_seq.push_back(handle);
+        }
+    }
+}
+
+void build_knobs_atomese::store_handle(Handle& handle, int num, bool is_first) {
+    if (is_first) {
+        _handle_seq.clear();
+        _type_store.clear();
+    }
+    if (handle->is_link()) {
+        if (handle->get_arity() > 0) {
+            HandleSeq handleSeq_handle = handle->getOutgoingSet();
+            _type_store.insert(make_pair(handle->get_type(), handleSeq_handle.size()));
+            for (auto sib: handleSeq_handle) {
+                _handle_seq.push_back(sib);
+            }
+            for (auto sib: handleSeq_handle) {
+                store_handle(sib, ++num, false);
+            }
+        }
+        else {
+            _type_store[_handle_seq[num-1]->get_type()] = 1;
+        }
+    }
+    else {
+        _handle_seq.push_back(handle);
+    }
+}
+
+Handle build_knobs_atomese::swap_and_or(Handle& handle) {
+    Type type = handle->get_type();
+    HandleSeq handleSeq = {};
+    OC_ASSERT(type == AND_LINK || type == OR_LINK);
+    return type == AND_LINK ? createLink(handleSeq, OR_LINK) : createLink(handleSeq, AND_LINK);
+}
+
+void build_knobs_atomese::insert_handle_arg(opencog::Handle &handle,
+                                            opencog::Handle &handle_arg,
+                                            bool negate) {
+    Type type = handle->get_type();
+    type_node arg_type = atomeseType_to_type_node(type);
+    if (arg_type == id::boolean_type)
+    {
+        if(negate) {
+            HandleSeq handleSeq = {handle_arg};
+            handle_arg = createLink(handleSeq, NOT_LINK);
+        }
+        HandleSeq handleSeq1 = {handle->getOutgoingSet()};
+        handleSeq1.push_back(handle_arg);
+        handle = createLink(handleSeq1, type);
+    } else if (arg_type == id::contin_type) {
+        OC_ASSERT(false," Not Implemented Yet!");
+    }
+}
+
+/**
  * @param handle
  */
 
