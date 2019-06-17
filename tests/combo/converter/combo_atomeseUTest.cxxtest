@@ -98,6 +98,24 @@ public:
 
 	}
 
+
+	void test_atomese_combo_null_vertex(void)
+	{
+		combo::combo_tree tr = combo::str2combo_tree("null_vertex($1 $2)", {});
+
+		combo::ComboToAtomese to_atomese;
+		Handle h = to_atomese(tr);
+		Handle predicate_node = createNode(PREDICATE_NODE, "$1");
+		Handle predicate_node2 = createNode(PREDICATE_NODE, "$2");
+
+		HandleSeq handleSeq = {predicate_node, predicate_node2};
+
+		Handle false_link = createLink(handleSeq, LINK);
+
+		TS_ASSERT(content_eq(h, false_link));
+
+	}
+
 	void test_atomese_combo_arguments(void)
 	{
 		combo::combo_tree tr = combo::str2combo_tree("$1", {});

@@ -139,6 +139,10 @@ std::pair<Type, Handle> vertex_2_atom::operator()(const builtin &b) const
 			*_parent = id::predicate;
 			type = FALSE_LINK;
 			break;
+		case id::null_vertex:
+			*_parent = id::predicate;
+			type = LINK;
+			break;
 		default: OC_ASSERT(false, "unsupported");
 	}
 	return std::make_pair(type, Handle());
@@ -209,7 +213,12 @@ void AtomeseToCombo::link2combo(const Handle &h, std::vector<std::string> &label
 	if (OR_LINK == t) {
 		iter = tr.empty() ? tr.set_head(id::logical_or) : tr.append_child(iter, id::logical_or);
 		return;
-	} else {
+	}
+	if (LINK == t) {
+        iter = tr.empty() ? tr.set_head(id::null_vertex) : tr.append_child(iter, id::null_vertex);
+        return;
+	}
+	else {
 		OC_ASSERT(false, "unsupported type");
 	}
 }
