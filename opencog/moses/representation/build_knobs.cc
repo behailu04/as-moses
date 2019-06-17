@@ -160,8 +160,6 @@ build_knobs_atomese::build_knobs_atomese(Handle& exemplar,
 	if(output_type == id::boolean_type) {
 		logical_canonize(_exemplar);
 		build_logical(_exemplar, _exemplar);
-		_handle_seq.clear();
-		_type_store.clear();
 		logical_cleanup();
 	}
 	else if (output_type == id::contin_type) {
@@ -246,11 +244,7 @@ void build_knobs_combo::logical_canonize(pre_it it)
  */
 void build_knobs_atomese::insert_atom_above(Handle& handle, Handle& find,
                                       Type type, bool is_first) {
-    if(is_first) {
-        _handle_seq.clear();
-        _type_store.clear();
-    }
-    if(content_eq(find, handle)) {
+    if(search_handle(handle, find) == 1) {
         for (int i = 0; i < _handle_seq.size(); ++i) {
             if (content_eq(_handle_seq[i], find)) {
                 HandleSeq handleSeq;
@@ -259,90 +253,55 @@ void build_knobs_atomese::insert_atom_above(Handle& handle, Handle& find,
                 break;
             }
         }
-        std::map<Type, int>::reverse_iterator rit;
-        int handleSeq_size = _handle_seq.size();
-        HandleSeq handleSeq1;
-        for (rit=_type_store.rbegin(); rit!=_type_store.rend(); ++rit) {
-            int limit = handleSeq_size - rit->second;
-            if (handleSeq_size > 0) {
-                for (int j = handleSeq_size - 1; j > limit-1; --j) {
-                    handleSeq1.push_back(_handle_seq[j]);
-                }
-                handleSeq_size = limit+1;
-                _handle_seq[limit] = createLink(handleSeq1, rit->first);
-                handleSeq1.clear();
-            }
-        }
-        _exemplar = _handle_seq[1];
+        handle = hypergraph_rebuild(handle);
+    } else {
+        HandleSeq handleSeq;
+        handleSeq.push_back(handle);
+        handle = createLink(handleSeq, type);
     }
-    else {
-        if(handle->is_link()) {
-            HandleSeq handleSeq_handle = handle->getOutgoingSet();
-            _type_store.insert(make_pair(handle->get_type(), handleSeq_handle.size()));
-            for(auto sib: handleSeq_handle) {
-                _handle_seq.push_back(sib);
+
+}
+
+Handle build_knobs_atomese::hypergraph_rebuild(opencog::Handle &handle) {
+    std::map<Type, int>::iterator it;
+    int handleSeq_size = _handle_seq.size();
+    HandleSeq handle_seq;
+    for (it = _type_store.begin(); it != _type_store.end(); ++it) {
+        int limit = handleSeq_size - it->second - 1;
+        if (handleSeq_size > -1) {
+            for (int j = handleSeq_size - 1; j > limit; --j) {
+                handle_seq.push_back(_handle_seq[j]);
             }
-            for(auto sib: handleSeq_handle) {
-                insert_atom_above(sib,find, type, false);
-                break;
+            handleSeq_size = limit + 1;
+            if (limit >= 0) {
+                _handle_seq[limit] = createLink(handle_seq, it->first);
+            } else {
+                handle = createLink(handle_seq, it->first);
+                return handle;
             }
-        }
-        else {
-            _handle_seq.push_back(handle);
+            handle_seq.clear();
         }
     }
 }
 
 void build_knobs_atomese::append_atom_below(Handle& handle, Handle& find,
-                                      Type type, bool is_first) {
-    if(is_first) {
-        _handle_seq.clear();
-        _type_store.clear();
-    }
-    if (handle->is_node()) {
-        return;
-    }
-
-    if(content_eq(find, handle)) {
-        Logger().debug() << "find and replace";
+                                      Handle& atom, bool is_first) {
+    if (search_handle(handle, find) == 1) {
         for (int i = 0; i < _handle_seq.size(); ++i) {
+            logger().debug()<<"handle_seq: "<< oc_to_string(_handle_seq[i]->get_handle(), empty_string);
+            logger().debug()<<"find: " << oc_to_string(find, empty_string);
             if (content_eq(_handle_seq[i], find)) {
-                Handle handle1;
-                HandleSeq handleSeq2;
-                HandleSeq handleSeq = handle->getOutgoingSet();
-                handle1 = createLink(handleSeq2, type);
-                handleSeq.push_back(handle1);
-                _handle_seq[i] = createLink(handleSeq, handle->get_type());
+                HandleSeq handleSeq = _handle_seq[i]->getOutgoingSet();
+                handleSeq.push_back(atom);
+                _handle_seq[i] = createLink(handleSeq, _handle_seq[i]->get_type());
                 break;
             }
         }
-        std::map<Type, int>::reverse_iterator rit;
-        int handleSeq_size = _handle_seq.size();
-        HandleSeq handleSeq1;
-        for (rit=_type_store.rbegin(); rit!=_type_store.rend(); ++rit) {
-            int limit = handleSeq_size - rit->second;
-            for (int j = handleSeq_size - 1; j >= limit; --j) {
-                handleSeq1.push_back(_handle_seq[j]);
-            }
-            handleSeq_size = limit;
-            _handle_seq[limit] = createLink(handleSeq1, rit->first);
-        }
-        _exemplar = _handle_seq[0];
-    }
-    else {
-        if(handle->is_link()) {
-            HandleSeq handleSeq_handle = handle->getOutgoingSet();
-            _type_store.insert(make_pair(handle->get_type(), handleSeq_handle.size()));
-            for(auto sib: handleSeq_handle) {
-                _handle_seq.push_back(sib);
-            }
-            for(auto sib: handleSeq_handle) {
-                append_atom_below(sib,find, type, false);
-            }
-        }
-        else {
-            _handle_seq.push_back(handle);
-        }
+        handle = hypergraph_rebuild(handle);
+    } else {
+        HandleSeq handleSeq = handle->getOutgoingSet();
+        handleSeq.push_back(atom);
+        handle = createLink(handleSeq, handle->get_type());
     }
 }
 
@@ -445,6 +404,32 @@ void build_knobs_atomese::store_handle(Handle& handle, int num, bool is_first) {
     }
 }
 
+int build_knobs_atomese::search_handle(opencog::Handle &source, opencog::Handle &target,
+        bool is_first) {
+    if (is_first) {
+        _handle_seq.clear();
+        _type_store.clear();
+    }
+    if (content_eq(source, target)) {
+        return 0;
+    } else {
+        if (source->is_link()) {
+            HandleSeq handleSeq = source->getOutgoingSet();
+            _type_store.insert(make_pair(source->get_type(), handleSeq.size()));
+            for (auto sib: handleSeq) {
+                _handle_seq.push_back(sib);
+            }
+            for (auto sib: handleSeq) {
+                search_handle(sib, target, false);
+                break;
+            }
+        } else {
+            _handle_seq.push_back(source);
+        }
+    }
+    return _handle_seq.size() > 0 ? 1: -1;
+}
+
 Handle build_knobs_atomese::swap_and_or(Handle& handle) {
     Type type = handle->get_type();
     HandleSeq handleSeq = {};
@@ -504,7 +489,6 @@ void build_knobs_atomese::build_logical(Handle& sub_handle,
 										Handle& handle)
 {
 	Type flip = NOTYPE;
-
 	Type tt = handle->get_type();
 	if (tt == NOT_LINK ) {
 		OC_ASSERT(false,
@@ -526,7 +510,6 @@ void build_knobs_atomese::build_logical(Handle& sub_handle,
 	logger().debug("First call to add_logical_knobs");
 	// add_logical_knobs
 	add_logical_knobs(sub_handle, handle);
-
 	HandleSeq sib = handle->getOutgoingSet();
 	for (auto handle_sib: sib) {
         if( handle_sib->get_type() == NOTYPE) {
@@ -541,16 +524,16 @@ void build_knobs_atomese::build_logical(Handle& sub_handle,
 		else {
 			logger().debug("Call add_logical_knobs for node");
 			insert_atom_above(_exemplar, handle_sib, flip);
-            add_logical_knobs(sub_handle, _exemplar, false);
+			insert_atom_above(handle, handle_sib, flip);
+			HandleSeq handleSeq = { handle_sib };
+			Handle it = createLink(handleSeq, flip);
+            add_logical_knobs(sub_handle, it, false);
             break;
 		}
 	}
-
 	logger().debug("call add_logical_knobs for flipped sub program");
-    Handle handle1 = handle;
-	logger().debug()<< "handle:- " << oc_to_string(handle1, empty_string);
-	logger().debug()<<"_exemplar:- "<< oc_to_string(_exemplar, empty_string);
-    append_atom_below(_exemplar, handle1, flip);
+    Handle handle_flip = createLink(flip);
+	append_atom_below(_exemplar, handle, handle_flip);
 	add_logical_knobs(sub_handle, _exemplar);
 
 }
@@ -601,41 +584,42 @@ void build_knobs_atomese::add_logical_knobs(opencog::Handle &sub,
 	// convert _exemplar to _combo_exemplar
 	auto combo_exemplar = to_combo(_exemplar);
 
+	int arg_exemplar_loc = 0;
+
+	for (pre_it sib = combo_exemplar.first.begin(); sib != combo_exemplar.first.end(); ++sib) {
+	    if (is_argument(*sib)) {
+	        combo_exemplar.first.replace(sib, argument(std::stoi(
+	                combo_exemplar.second[arg_exemplar_loc])));
+	        arg_exemplar_loc += 1;
+	    }
+	}
+
 	// convert it exemplar to combo
     auto tr = to_combo(handle);
+
 
 	pre_it it = tr.first.begin();
 	vector<string> tr_second = tr.second;
 
-//    logger().debug()<< "subtree" << combo_tree(subtree);
-//    logger().debug()<<"it " << combo_tree(it);
-
 	// convert handle perms to combo perms
 	combo_tree_seq combo_perms;
 	for(int i = 0; i < perms.size(); i++) {
-//	    logger().debug()<<"perms "<<i << ":"<<oc_to_string(perms[i]->get_handle(), empty_string);
+	    logger().debug()<<"perms "<<i << ":"<<oc_to_string(perms[i]->get_handle(), empty_string);
 		auto perms_tree = to_combo(perms[i]->get_handle());
 
 		int arg_loc = 0;
 
 		for (pre_it sib = perms_tree.first.begin(); sib != perms_tree.first.end(); ++sib) {
 		    if (is_argument(*sib)) {
-		        perms_tree.first.replace(sib, "$"+perms_tree.second[arg_loc]);
+		        perms_tree.first.replace(sib, argument(std::stoi(
+		                perms_tree.second[arg_loc])));
 		        arg_loc += 1;
 		    }
 		}
 
-
-//		for (int i : boost::rang(1, num_children-1)) {
-//		    vertex arg = argument(i);
-//		    perms_tree.first.replace(arg,perms_tree.second[i] );
-//		}
-
 		combo_perms.push_back(perms_tree.first);
-//		logger().debug()<<"combo_perms "<<i<<":"<<oc_to_string(combo_perms[i], empty_string);
+		logger().debug()<<"combo_perms "<<i<<":"<<oc_to_string(combo_perms[i], empty_string);
 	}
-//    ostream_container(logger().debug() << "Perms:" << std::endl, combo_perms, "\n");
-
 	// knob probing.
 	boost::ptr_vector<logical_subtree_knob> kb_v =
 			build_knobs_atomese::logical_probe_rec(subtree, combo_exemplar.first, it, combo_perms.begin(), combo_perms.end(),
@@ -680,35 +664,6 @@ void build_knobs_atomese::sample_logical_perms(opencog::Handle &handle,
 											   opencog::HandleSeq &perms) {
     sample_store_nodes(handle);
     perms = _handle_seq;
-//    HandleSeq handleSeq1;
-//    if (handle->is_link()) {
-//        HandleSeq handleSeq = handle->getOutgoingSet();
-//        for (int i =0; i < handleSeq.size(); i++)
-//        {
-//            Handle arg = handleSeq[i];
-//            if(arg->is_link()) {
-//                handleSeq1 = arg->getOutgoingSet();
-//                for (int j=0; j < handleSeq1.size(); j++) {
-//                    Handle arg_x = handleSeq1[j];
-//                    if(permitted_op(arg_x)) {
-//                        perms.push_back(arg_x);
-//                    }
-//                    else if (atomeseType_to_type_node(arg->get_type()) == id::contin_type) {
-//                        OC_ASSERT(false," Not Implemented Yet!");
-//                    }
-//                }
-//            } else {
-//                if(permitted_op(arg)) {
-//                    perms.push_back(arg);
-//                }
-//            }
-//        }
-//    }
-//    else {
-//        if (permitted_op(handle)) {
-//            perms.push_back(handle);
-//        }
-//    }
 
 	if(_perm_ratio <= -1.0)
 		return;
@@ -725,23 +680,6 @@ void build_knobs_atomese::sample_logical_perms(opencog::Handle &handle,
             }
         }
     }
-//	if (handle->is_link()) {
-//	    HandleSeq handleSeq = handle->getOutgoingSet();
-//        Handle arg_a;
-//        Handle arg_b;
-//        for (int a = 0; a < handleSeq.size(); a++) {
-//            arg_a = handleSeq[a];
-//            if (permitted_op(arg_a)) {
-//                for (arity_t b = 0; b < handleSeq.size(); b++) {
-//                    arg_b = handleSeq[b];
-//                    if (permitted_op(arg_b) and a != b) {
-//                        permitted_perms.push_back({a, b});
-//                    }
-//                }
-//            }
-//        }
-//	}
-
 	unsigned max_pairs = permitted_perms.size();
 	if (max_pairs == 0)
 		return;

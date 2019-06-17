@@ -287,12 +287,16 @@ protected:
                      Type type, bool is_first= true);
 
     void append_atom_below(Handle& handle, Handle& find,
-                     Type type, bool is_first= true);
+                     Handle& atom, bool is_first= true);
 
+    Handle hypergraph_rebuild(Handle& handle);
     Handle swap_and_or(Handle& handle);
 
     void store_handle(Handle& handle, int num = 0,
                       bool is_first = true);
+
+    int search_handle(Handle& source, Handle& target,
+            bool is_first = true);
 
     // move 'Source; node(plus it's children) to become the next siblings.
     void move_after(Handle& handle,Handle& target,
